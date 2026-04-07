@@ -152,7 +152,7 @@ def search(query: str):
         return None
 
 
-def timenow(dummyinput) -> str:
+def timenow(_) -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -199,11 +199,51 @@ USER_PROMPT_TEMPLATE = """
 
 
 class ReActAgent:
-    def __init__(self, model: LLM, toolset: Toolset, max_iterations=1000):
+    def __init__(
+        self,
+        model: LLM,
+        toolset: Toolset,
+        max_iterations=1000,
+        max_history_items: int = 10,
+        max_history_entry_chars: int = 200,
+        max_tool_result_chars: int = 400,
+    ):
         self.model = model
         self.toolset = toolset
         self.max_iterations = max_iterations
-        self.history = []
+        self.max_history_items = max_history_items
+        self.max_history_entry_chars = max_history_entry_chars
+        self.max_tool_result_chars = max_tool_result_chars
+        self.history: List[str] = []
+
+    def _append_history(self, entry: str) -> None:
+        self.history.append(entry)
+        if len(self.history) > self.max_history_items:
+            self.history = self.history[-self.max_history_items :]
+
+    def _truncate_history_entry(self, text: Any) -> str:
+        return str(text)[: self.max_history_entry_chars]
+
+    def _summarize_tool_result(self, tool_name: str, tool_result: Any) -> str:
+        text = str(tool_result).strip()
+        compact_text = " ".join(text.split())
+
+        if not compact_text:
+            return f"{tool_name}: empty result"
+
+        if tool_name == "search":
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            summary_parts: List[str] = []
+            if lines:
+                summary_parts.append(lines[0])
+
+            numbered_lines = [line for line in lines if re.match(r"^\d+\.\s+", line)]
+            summary_parts.extend(numbered_lines[:2])
+            summary = " | ".join(summary_parts)
+            if summary:
+                return summary[: self.max_tool_result_chars]
+
+        return compact_text[: self.max_tool_result_chars]
 
     def _parse_response(self, response: str) -> Dict[str, Any]:
         thought_match = re.match(
@@ -267,8 +307,12 @@ class ReActAgent:
                 logger.error("Failed to parse Action from LLM response. Retrying...")
                 if thought:
                     logger.info(f"Thought: {thought}")
-                    self.history.append(f"Thought: {thought}")
-                self.history.append(f"Invalid Response: {response}")
+                    self._append_history(
+                        f"Thought: {self._truncate_history_entry(thought)}"
+                    )
+                self._append_history(
+                    f"Invalid Response: {self._truncate_history_entry(response)}"
+                )
                 continue
 
             if action.get("name") == "Finish":
@@ -278,7 +322,9 @@ class ReActAgent:
 
             if thought:
                 logger.info(f"Thought: {thought}")
-                self.history.append(f"Thought: {thought}")
+                self._append_history(
+                    f"Thought: {self._truncate_history_entry(thought)}"
+                )
 
             if action:
                 tool_name = action.get("name")
@@ -286,11 +332,15 @@ class ReActAgent:
 
                 if not tool_name:
                     logger.error("Parsed action is missing tool name. Retrying...")
-                    self.history.append(f"Invalid Action: {action}")
+                    self._append_history(
+                        f"Invalid Action: {self._truncate_history_entry(action)}"
+                    )
                     continue
 
                 logger.info(f"Action: {tool_name}[{tool_input}]")
-                self.history.append(f"Action: {tool_name}[{tool_input}]")
+                self._append_history(
+                    f"Action: {tool_name}[{self._truncate_history_entry(tool_input)}]"
+                )
 
                 tool_func = self.toolset.get(tool_name)
                 if tool_func:
@@ -298,9 +348,12 @@ class ReActAgent:
                     if not tool_result:
                         tool_result = "工具执行失败或没有返回结果。"
                     logger.debug(f"Tool Result: {tool_result}")
-                    self.history.append(f"Tool Result: {tool_result}")
+                    summarized_result = self._summarize_tool_result(
+                        tool_name, tool_result
+                    )
+                    self._append_history(f"Tool Result Summary: {summarized_result}")
                 else:
-                    self.history.append(f"Tool {tool_name} not found in toolset.")
+                    self._append_history(f"Tool {tool_name} not found in toolset.")
 
         logger.warning("Reached maximum iterations without finishing.")
         return None
