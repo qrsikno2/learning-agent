@@ -1,10 +1,10 @@
 import logging
 import os, re
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 from dotenv import load_dotenv
-from typing import List, Dict
+from typing import Any, Callable, Dict, List, Optional, cast
 from serpapi import SerpApiClient
-from typing import Dict, Any
 from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
@@ -46,7 +46,7 @@ class LLM:
 
         self.client = OpenAI(base_url=self.base_url, api_key=self.apikey)
 
-    def think(self, prompt: List[Dict[str, str]]) -> str:
+    def think(self, prompt: List[ChatCompletionMessageParam]) -> Optional[str]:
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -76,7 +76,7 @@ class Toolset:
     def register(self, name: str, description: str, func):
         self.tools[name] = {"description": description, "func": func}
 
-    def get(self, name: str) -> callable:
+    def get(self, name: str) -> Optional[Callable[..., Any]]:
         return self.tools.get(name, {}).get("func", None)
 
     def get_available_tools(self) -> str:
@@ -205,7 +205,7 @@ class ReActAgent:
         self.max_iterations = max_iterations
         self.history = []
 
-    def _parse_response(self, response: str) -> Dict[str, str]:
+    def _parse_response(self, response: str) -> Dict[str, Any]:
         thought_match = re.match(
             r"Thought:\s*(.*?)(?=\nAction:|$)", response, re.DOTALL
         )
@@ -219,30 +219,34 @@ class ReActAgent:
         mymatch = re.match(r"(\w+)\[(.*)\]", action_str)
         if mymatch:
             return {"name": mymatch.group(1), "input": mymatch.group(2)}
-        else:
-            return None
+
+        return {}
 
     def run(self, question: str):
         """
         运行ReActAgent来回答用户的问题。这个方法会根据系统提示模板构建对话历史，并不断调用LLM来获取思考和行动，直到得到最终答案或达到最大迭代次数。
         """
 
+        self.history = []
         for _ in range(self.max_iterations):
             history_string = "\n".join(self.history)
-            msg = [
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT_TEMPLATE.format(
-                        tools_list=self.toolset.get_available_tools()
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": USER_PROMPT_TEMPLATE.format(
-                        question=question, history=history_string
-                    ),
-                },
-            ]
+            msg: List[ChatCompletionMessageParam] = cast(
+                List[ChatCompletionMessageParam],
+                [
+                    {
+                        "role": "system",
+                        "content": SYSTEM_PROMPT_TEMPLATE.format(
+                            tools_list=self.toolset.get_available_tools()
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": USER_PROMPT_TEMPLATE.format(
+                            question=question, history=history_string
+                        ),
+                    },
+                ],
+            )
 
             response = self.model.think(msg)
             logger.debug(f"LLM Response: {response}")
@@ -257,10 +261,18 @@ class ReActAgent:
                 continue
 
             thought = parsed_response.get("thought", "")
-            action = parsed_response.get("action", {})
+            action = parsed_response.get("action") or {}
+
+            if not action:
+                logger.error("Failed to parse Action from LLM response. Retrying...")
+                if thought:
+                    logger.info(f"Thought: {thought}")
+                    self.history.append(f"Thought: {thought}")
+                self.history.append(f"Invalid Response: {response}")
+                continue
 
             if action.get("name") == "Finish":
-                final_answer = parsed_response["action"].get("input", "")
+                final_answer = action.get("input", "")
                 logger.info(f"Final Answer: {final_answer}")
                 return final_answer
 
@@ -270,7 +282,13 @@ class ReActAgent:
 
             if action:
                 tool_name = action.get("name")
-                tool_input = action.get("input")
+                tool_input = action.get("input", "")
+
+                if not tool_name:
+                    logger.error("Parsed action is missing tool name. Retrying...")
+                    self.history.append(f"Invalid Action: {action}")
+                    continue
+
                 logger.info(f"Action: {tool_name}[{tool_input}]")
                 self.history.append(f"Action: {tool_name}[{tool_input}]")
 
