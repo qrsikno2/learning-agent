@@ -5,7 +5,7 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("LearningAgent.Tools")
 
 def format_serpapi_results_for_llm(json_data):
     context_parts = []

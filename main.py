@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from core import LLM, Toolset
 from react_agent import ReActAgent
+from plan_solve_agent import PlanSolveAgent
 from tools import timenow, curl, search
 
 class ColorFormatter(logging.Formatter):
@@ -51,9 +52,10 @@ if __name__ == "__main__":
         "curl", "Use this tool to curl the content of a webpage given its URL.", curl
     )
 
-    agent = ReActAgent(
-        model=model, toolset=toolset, max_iterations=10000, logger=logger
-    )
+    # agent = ReActAgent(
+    #     model=model, toolset=toolset, max_iterations=10000, logger=logger
+    # )
+    agent = PlanSolveAgent(model=model)
 
     while True:
         question = input("请输入您的问题: ")

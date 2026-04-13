@@ -5,7 +5,7 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 
-logger = logging.getLogger("LearningAgent")
+logger = logging.getLogger("LearningAgent.Core")
 
 
 class LLM:
@@ -14,7 +14,7 @@ class LLM:
         self.apikey = apikey
         self.model_name = model_name
 
-        self.client = OpenAI(base_url=self.base_url, api_key=self.apikey)
+        self.client = OpenAI(base_url=self.base_url, api_key=self.apikey, timeout=30)
 
     def think(self, prompt: List[ChatCompletionMessageParam]) -> Optional[str]:
         try:
