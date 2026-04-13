@@ -1,13 +1,14 @@
 import logging
-import os, re
-from openai import OpenAI
-from openai.types.chat import ChatCompletionMessageParam
+import os
 from dotenv import load_dotenv
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import Any
 from serpapi import SerpApiClient
 from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
+
+from core import LLM, Toolset
+from react_agent import ReActAgent
 
 
 class ColorFormatter(logging.Formatter):
@@ -36,53 +37,6 @@ formatter = ColorFormatter(
 )
 ch.setFormatter(formatter)
 logger.addHandler(ch)
-
-
-class LLM:
-    def __init__(self, base_url, apikey, model_name):
-        self.base_url = base_url
-        self.apikey = apikey
-        self.model_name = model_name
-
-        self.client = OpenAI(base_url=self.base_url, api_key=self.apikey)
-
-    def think(self, prompt: List[ChatCompletionMessageParam]) -> Optional[str]:
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=prompt,
-                # stream=True,
-                stream=False,
-            )
-
-            result = response.choices[0].message.content
-            if not result:
-                finish_reason = response.choices[0].finish_reason
-                logger.warning(
-                    f"LLM response has no content. Finish reason: {finish_reason}"
-                )
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error in LLM think: {e}")
-            return None
-
-
-class Toolset:
-    def __init__(self):
-        self.tools: Dict[str, Dict[str, Any]] = {}
-
-    def register(self, name: str, description: str, func):
-        self.tools[name] = {"description": description, "func": func}
-
-    def get(self, name: str) -> Optional[Callable[..., Any]]:
-        return self.tools.get(name, {}).get("func", None)
-
-    def get_available_tools(self) -> str:
-        return "\n".join(
-            [f"{name}: {info['description']}" for name, info in self.tools.items()]
-        )
 
 
 def format_serpapi_results_for_llm(json_data):
@@ -175,188 +129,25 @@ def curl(url: str) -> str:
         return "浏览页面时发生错误： " + str(e)
 
 
-SYSTEM_PROMPT_TEMPLATE = """
-你是一个由emofer研发的AI助手, 你需要仔细的逐步的来回答用户的问题。
-你可以使用以下工具来获取你不知道或不确定的信息：
-{tools_list}
+PLANNER_PROMPT_TEMPLATE = """
+你是一个顶级的AI规划专家。你的任务是将用户提出的复杂问题分解成一个可以由多个简单步骤组成的行动计划。
+请确保计划中的每个步骤都是一个独立的，可执行的子任务，并且按照逻辑顺序排列.
+你的输出必须是一个Python列表，其中每个元素都是一个描述子任务的字符串。
 
-请严格按照以下格式来进行对话:
-Thought: 你的思考过程
-Action: 你这一阶段决定执行的工具，必须满足以下格式:
-- `{{tool_name}}[{{tool_input}}]`，其中{{tool_name}}必须是上面工具列表中的一个工具名称，{{tool_input}}是你要传递给工具的输入。
-- `Finish[{{final_answer}}]`，当你认为已经有足够的信息来回答用户的问题时，使用这个格式来结束对话，其中{{final_answer}}是你要给用户的最终答案。
-- 当你已经完成了一个工具的调用后，你需要继续进行思考并决定下一步的行动，直到你认为可以给出最终答案为止。
-"""
+请严格按照以下格式来输出你的计划，用```python和```作为前后缀来包裹你的输出是必要的:
+```python
+["子任务1的描述","子任务2的描述",...]
+```
 
-USER_PROMPT_TEMPLATE = """
-请根据上面的系统提示来回答用户的问题。你需要在每一步都清晰地展示你的思考过程，并且合理地使用工具来获取信息，直到你认为可以给出最终答案为止。
-历史对话: 
-{history}
-
-用户的问题是: {question}
-请根据上述进展，给出你下一步的Thought和Action.
+以下是你需要解决的用户问题: 
+{question}
+请开始你的规划，并输出你的行动计划。
 """
 
 
-class ReActAgent:
-    def __init__(
-        self,
-        model: LLM,
-        toolset: Toolset,
-        max_iterations=1000,
-        max_history_items: int = 10,
-        max_history_entry_chars: int = 200,
-        max_tool_result_chars: int = 400,
-    ):
-        self.model = model
-        self.toolset = toolset
-        self.max_iterations = max_iterations
-        self.max_history_items = max_history_items
-        self.max_history_entry_chars = max_history_entry_chars
-        self.max_tool_result_chars = max_tool_result_chars
-        self.history: List[str] = []
-
-    def _append_history(self, entry: str) -> None:
-        self.history.append(entry)
-        if len(self.history) > self.max_history_items:
-            self.history = self.history[-self.max_history_items :]
-
-    def _truncate_history_entry(self, text: Any) -> str:
-        return str(text)[: self.max_history_entry_chars]
-
-    def _summarize_tool_result(self, tool_name: str, tool_result: Any) -> str:
-        text = str(tool_result).strip()
-        compact_text = " ".join(text.split())
-
-        if not compact_text:
-            return f"{tool_name}: empty result"
-
-        if tool_name == "search":
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
-            summary_parts: List[str] = []
-            if lines:
-                summary_parts.append(lines[0])
-
-            numbered_lines = [line for line in lines if re.match(r"^\d+\.\s+", line)]
-            summary_parts.extend(numbered_lines[:2])
-            summary = " | ".join(summary_parts)
-            if summary:
-                return summary[: self.max_tool_result_chars]
-
-        return compact_text[: self.max_tool_result_chars]
-
-    def _parse_response(self, response: str) -> Dict[str, Any]:
-        thought_match = re.match(
-            r"Thought:\s*(.*?)(?=\nAction:|$)", response, re.DOTALL
-        )
-        action_match = re.search(r"Action:\s*(.*)", response, re.DOTALL)
-        thought = thought_match.group(1).strip() if thought_match else ""
-        action_text = action_match.group(1).strip() if action_match else ""
-        action = self._parse_action(action_text) if action_text else {}
-        return {"thought": thought, "action": action}
-
-    def _parse_action(self, action_str: str) -> Dict[str, str]:
-        mymatch = re.match(r"(\w+)\[(.*)\]", action_str)
-        if mymatch:
-            return {"name": mymatch.group(1), "input": mymatch.group(2)}
-
-        return {}
-
-    def run(self, question: str):
-        """
-        运行ReActAgent来回答用户的问题。这个方法会根据系统提示模板构建对话历史，并不断调用LLM来获取思考和行动，直到得到最终答案或达到最大迭代次数。
-        """
-
-        self.history = []
-        for _ in range(self.max_iterations):
-            history_string = "\n".join(self.history)
-            msg: List[ChatCompletionMessageParam] = cast(
-                List[ChatCompletionMessageParam],
-                [
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT_TEMPLATE.format(
-                            tools_list=self.toolset.get_available_tools()
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": USER_PROMPT_TEMPLATE.format(
-                            question=question, history=history_string
-                        ),
-                    },
-                ],
-            )
-
-            response = self.model.think(msg)
-            logger.debug(f"LLM Response: {response}")
-
-            if not response:
-                logger.error("LLM did not return a response.")
-                break
-
-            parsed_response = self._parse_response(response)
-            if not parsed_response:
-                logger.error("Failed to parse LLM response. Retrying...")
-                continue
-
-            thought = parsed_response.get("thought", "")
-            action = parsed_response.get("action") or {}
-
-            if not action:
-                logger.error("Failed to parse Action from LLM response. Retrying...")
-                if thought:
-                    logger.info(f"Thought: {thought}")
-                    self._append_history(
-                        f"Thought: {self._truncate_history_entry(thought)}"
-                    )
-                self._append_history(
-                    f"Invalid Response: {self._truncate_history_entry(response)}"
-                )
-                continue
-
-            if action.get("name") == "Finish":
-                final_answer = action.get("input", "")
-                logger.info(f"Final Answer: {final_answer}")
-                return final_answer
-
-            if thought:
-                logger.info(f"Thought: {thought}")
-                self._append_history(
-                    f"Thought: {self._truncate_history_entry(thought)}"
-                )
-
-            if action:
-                tool_name = action.get("name")
-                tool_input = action.get("input", "")
-
-                if not tool_name:
-                    logger.error("Parsed action is missing tool name. Retrying...")
-                    self._append_history(
-                        f"Invalid Action: {self._truncate_history_entry(action)}"
-                    )
-                    continue
-
-                logger.info(f"Action: {tool_name}[{tool_input}]")
-                self._append_history(
-                    f"Action: {tool_name}[{self._truncate_history_entry(tool_input)}]"
-                )
-
-                tool_func = self.toolset.get(tool_name)
-                if tool_func:
-                    tool_result = tool_func(tool_input)
-                    if not tool_result:
-                        tool_result = "工具执行失败或没有返回结果。"
-                    logger.debug(f"Tool Result: {tool_result}")
-                    summarized_result = self._summarize_tool_result(
-                        tool_name, tool_result
-                    )
-                    self._append_history(f"Tool Result Summary: {summarized_result}")
-                else:
-                    self._append_history(f"Tool {tool_name} not found in toolset.")
-
-        logger.warning("Reached maximum iterations without finishing.")
-        return None
+class PlannerAgent:
+    def __init__(self, llm_client: LLM):
+        self.llm_client = llm_client
 
 
 if __name__ == "__main__":
@@ -377,7 +168,9 @@ if __name__ == "__main__":
         "curl", "Use this tool to curl the content of a webpage given its URL.", curl
     )
 
-    agent = ReActAgent(model=model, toolset=toolset, max_iterations=10000)
+    agent = ReActAgent(
+        model=model, toolset=toolset, max_iterations=10000, logger=logger
+    )
 
     while True:
         question = input("请输入您的问题: ")
