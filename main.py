@@ -55,7 +55,7 @@ if __name__ == "__main__":
     # agent = ReActAgent(
     #     model=model, toolset=toolset, max_iterations=10000, logger=logger
     # )
-    agent = PlanSolveAgent(model=model)
+    agent = PlanSolveAgent(model=model, toolset=toolset)
 
     while True:
         question = input("请输入您的问题: ")

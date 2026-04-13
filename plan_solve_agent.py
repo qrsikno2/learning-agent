@@ -1,4 +1,4 @@
-from core import LLM
+from core import LLM, Toolset
 import logging
 import ast
 
@@ -44,8 +44,9 @@ EXECUTOR_PROMPT_TEMPLATE_USER = """
 """
 
 class PlannerAgent:
-    def __init__(self, model: LLM):
+    def __init__(self, model: LLM, tools: Toolset):
         self.model = model
+        self.tools = tools
     
     def plan(self, question: str) -> list[str]:
         """
@@ -71,8 +72,9 @@ class PlannerAgent:
             return []
 
 class ExecutorAgent:
-    def __init__(self, model: LLM):
+    def __init__(self, model: LLM, tools: Toolset):
         self.model = model
+        self.tools = tools
 
     def execute(self, question:str, plan: list[str]) -> str:
         """
@@ -101,10 +103,11 @@ class ExecutorAgent:
         return final_answer
 
 class PlanSolveAgent:
-    def __init__(self, model: LLM):
-        self.planner = PlannerAgent(model)
-        self.executor = ExecutorAgent(model)
+    def __init__(self, model: LLM, tools: Toolset):
+        self.planner = PlannerAgent(model, tools)
+        self.executor = ExecutorAgent(model, tools)
         self.model = model
+        self.tools = tools
 
     def run(self, question: str) -> str:
         plan = self.planner.plan(question)
