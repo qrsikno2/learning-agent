@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from core import LLM, Toolset
 from react_agent import ReActAgent
 from plan_solve_agent import PlanSolveAgent
+from reflect_agent import ReflectAgent
 from tools import timenow, curl, search
 
 class ColorFormatter(logging.Formatter):
@@ -55,7 +56,8 @@ if __name__ == "__main__":
     # agent = ReActAgent(
     #     model=model, toolset=toolset, max_iterations=10000, logger=logger
     # )
-    agent = PlanSolveAgent(model=model, tools=toolset)
+    # agent = PlanSolveAgent(model=model, tools=toolset)
+    agent = ReflectAgent(model=model, max_iterations=10)
 
     while True:
         question = input("请输入您的问题: ")
