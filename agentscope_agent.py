@@ -12,7 +12,7 @@ from typing import List
 from collections import Counter
 
 load_dotenv()  
-MAX_DISCUSSION_ROUND = 5
+MAX_DISCUSSION_ROUND = 3
 
 def format_player_list(players):
     return "[" + ", ".join(players) + "]"
@@ -39,11 +39,11 @@ class GameAgent(ReActAgent):
             name=name,
             sys_prompt=get_role_action_prompt(game_role, character),
             model=model,
-            formatter=OpenAIChatFormatter()
+            formatter=OpenAIChatFormatter(), 
         )
         self.character = character
         self.game_role = game_role
-
+    
 class Moderator():
     def __init__(self, werewolves: List[GameAgent] = None, villagers: List[GameAgent] = None):
         self.werewolves = werewolves
@@ -57,8 +57,8 @@ class Moderator():
             alive_players.extend(self.villagers)
         return alive_players
 
-    async def werewolf_part(self, alive_players: List[GameAgent]):
-        print("【狼人行动阶段】")
+    async def werewolf_part(self, alive_villagers: List[GameAgent], alive_players: List[GameAgent]):
+        print("[狼人行动阶段]")
         if not self.werewolves:
             print("没有狼人了，跳过狼人行动阶段")
             return None
@@ -67,7 +67,7 @@ class Moderator():
             participants=self.werewolves,
             enable_auto_broadcast=True,
             announcement=await self.announce(
-                f"狼人们，请讨论今晚的击杀目标。存活玩家：{format_player_list([player.name for player in alive_players])}"
+                f"狼人们，请讨论今晚的击杀目标。只用决定谁是目标，系统会自动击杀. 决定完成之后如果不需要讨论只需要说出目标的名字，不用其他内容。以下是存活的村民：{format_player_list([player.name for player in alive_villagers])}" 
             )
         ) as hub:
             for _ in range(MAX_DISCUSSION_ROUND):
@@ -82,29 +82,45 @@ class Moderator():
                 structured_model=KillModelCN,
             )
             valid_targets = []
-            for vote in kill_votes:
-                if isinstance(vote, dict) and "kill_target" in vote and vote["kill_target"] in [player.name for player in alive_players]:
-                    valid_targets.append(vote.kill_target)
+            for msg_vote in kill_votes:
+                if getattr(msg_vote, "metadata", None) and hasattr(msg_vote.metadata, "kill_target"):
+                    target = msg_vote.metadata.kill_target
+                elif getattr(msg_vote, "metadata", None) and isinstance(msg_vote.metadata, dict):
+                    # 有些大模型解析出的 dict
+                    target = msg_vote.metadata.get("kill_target")
+                else:
+                    target = None
+                    
+                if target in [player.name for player in alive_players]:
+                    print(f"{target} 1票")
+                    valid_targets.append(target)
             
             if not valid_targets:
                 return None
 
             vote_counter = Counter(valid_targets)
-            most_voted_target, count = vote_counter.most_common(1)[0]
+            result = vote_counter.most_common()
+            print("今晚的击杀投票结果：", result)
+            most_voted_target, count = result[0]
             
             return most_voted_target
     
     async def villager_part(self, alive_players: List[GameAgent], removed_player: str = None):
-        print("【村民行动阶段】")
+        print("[白天行动阶段]")
         if not self.villagers:
             print("没有村民了，跳过村民行动阶段")
             return None
+        
+        if removed_player:
+            print(f"昨晚被击杀的玩家是{removed_player}")
+        else:
+            print("昨晚没有玩家被击杀")
         
         async with MsgHub(
             participants=self.villagers,
             enable_auto_broadcast=True,
             announcement=await self.announce(
-                f"村民们，请讨论今天的投票目标。存活玩家：{format_player_list([player.name for player in alive_players])}" + (f"，昨晚被击杀的玩家是{removed_player}" if removed_player else "")
+                f"村民们，请讨论今天的投票目标，关于你怀疑谁最有可能是狼人。只需要投票，投票完成后系统会自动击杀。决定完成之后如果不需要讨论只需要说出目标的名字，不用其他内容。存活玩家：{format_player_list([player.name for player in alive_players])}" + (f"，昨晚被击杀的玩家是{removed_player}" if removed_player else "")
             )
         ) as hub:
             for _ in range(MAX_DISCUSSION_ROUND):
@@ -149,10 +165,11 @@ class Moderator():
     async def run_game(self):
         while len(self.werewolves) > 0 and len(self.villagers) > 0:
             alive_players = self._get_alive_players()
-            kill_target_wolf = await self.werewolf_part(alive_players)
+            alive_villagers = [player for player in alive_players if player in self.villagers]
+            kill_target_wolf = await self.werewolf_part(alive_villagers, alive_players)
             if kill_target_wolf:
                 self._remove_player(kill_target_wolf)
-
+            
             alive_players = self._get_alive_players()
             vote_target = await self.villager_part(alive_players, removed_player=kill_target_wolf)
             if vote_target:
@@ -161,12 +178,11 @@ class Moderator():
 def get_role_action_prompt(role: str, character: str) -> str:
     base_prompt = f"""你是{character}, 在这场三国狼人杀中扮演{role}的角色。
     重要规则：
-    0. 游戏分为白天和夜晚两个阶段，交替进行
+    0. 游戏分为白天和夜晚两个阶段，交替进行. 夜晚狼人投票决定击杀目标，白天所有玩家投票决定谁是可疑的狼人。
     1. 你只能通过对话和推理参与游戏
     2. 不要尝试调用任何外部工具或函数
     3. 严格按照要求的JSON格式回复 
-    4. 游戏中你只能看到自己的角色信息，其他玩家的角色对你来说都是未知的，你需要通过观察和推理来判断他们的身份
-    5. 表面上大家以平民身份出现，但实际上有不同的目标和角色，你需要根据自己的角色特点和目标来制定策略
+    4. 游戏中你只能看到自己的角色信息，其他玩家的身份未知。
     
     角色特点：
     """
@@ -175,8 +191,8 @@ def get_role_action_prompt(role: str, character: str) -> str:
         return base_prompt + f"""
         - 你是狼人阵营，目标是消灭所有好人
         - 夜晚可以与其他狼人协商击杀目标
-        - 白天要隐藏身份，误导好人
-        - 以{character}的性格说话和行动
+        - 白天要隐藏身份，误导好人,保护同伴
+        - 以{character}的性格说话和执行三国狼人杀的行动
         """
 
     if role == "村民":
@@ -184,7 +200,7 @@ def get_role_action_prompt(role: str, character: str) -> str:
         - 你是村民，目标是找出所有狼人并保护好人
         - 你没有特殊能力，主要通过白天的讨论和投票来判定狼人身份并击杀之
         - 白天要分析信息，揭露狼人
-        - 以{character}的性格说话和行动
+        - 以{character}的性格说话和执行三国狼人杀的行动
         """
         
     # if role == "预言家":
@@ -192,7 +208,7 @@ def get_role_action_prompt(role: str, character: str) -> str:
     #     - 你是预言家，目标是找出所有狼人并保护好人
     #     - 夜晚可以查看一个玩家的身份
     #     - 白天要分析信息，揭露狼人
-    #     - 以{character}的性格说话和行动
+    #     - 以{character}的性格说话和执行三国狼人杀的行动
     #     """
     
     # if role == "女巫":
@@ -201,20 +217,20 @@ def get_role_action_prompt(role: str, character: str) -> str:
     #     - 夜晚可以选择使用解药救人或毒药杀人
     #     - 毒药和解药只能使用一次，且不能同时使用，要谨慎选择
     #     - 白天要分析信息，做出决策
-    #     - 以{character}的性格说话和行动
+    #     - 以{character}的性格说话和执行三国狼人杀的行动
     #     """
 
 async def game_main():
     p = 0.3
 
-    agentscope.init()
+    agentscope.init(logging_path="game.log")
     llm = OpenAIChatModel(
         model_name=os.getenv("LLM_MODEL_ID"),
         api_key=os.getenv("LLM_API_KEY"), 
         client_kwargs={"base_url": os.getenv("LLM_BASE_URL")},
         stream=False,
     )
-    characters_pronom = ["刘备", "关羽", "张飞", "曹操", "孙权", "诸葛亮"]
+    characters_pronom = ["刘备", "关羽", "张飞", "曹操", "孙权", "诸葛亮", "司马懿", "周瑜", "吕布", "赵云"]
     identity = np.random.choice(["狼人", "村民"], size=len(characters_pronom), p=[p, 1-p])
     werewolves = []
     villagers = []
