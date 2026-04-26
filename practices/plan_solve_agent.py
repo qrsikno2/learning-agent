@@ -1,4 +1,4 @@
-from core import LLM, Toolset
+from practices.core import LLM, Toolset
 import logging
 import ast
 

@@ -1,11 +1,11 @@
 import logging
 import os
 from dotenv import load_dotenv
-from core import LLM, Toolset
-from react_agent import ReActAgent
-from plan_solve_agent import PlanSolveAgent
-from reflect_agent import ReflectAgent
-from tools import timenow, curl, search
+from practices.core import LLM, Toolset
+from practices.react_agent import ReActAgent
+from practices.plan_solve_agent import PlanSolveAgent
+from practices.reflect_agent import ReflectAgent
+from practices.tools import timenow, curl, search
 
 class ColorFormatter(logging.Formatter):
     COLORS = {
