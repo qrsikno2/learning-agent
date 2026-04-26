@@ -71,8 +71,20 @@ class Moderator():
             )
         ) as hub:
             for _ in range(MAX_DISCUSSION_ROUND):
+                agreements = []
                 for wolf in self.werewolves:
-                    await wolf(structured_model=DiscussionModelCN)
+                    msg = await wolf(structured_model=DiscussionModelCN)
+                    metadata = getattr(msg, "metadata", None)
+                    agreed = False
+                    if metadata:
+                        if hasattr(metadata, "reach_agreement"):
+                            agreed = metadata.reach_agreement
+                        elif isinstance(metadata, dict):
+                            agreed = metadata.get("reach_agreement", False)
+                    agreements.append(agreed)
+                
+                if len(self.werewolves) > 0 and all(agreements):
+                    break
             
             hub.set_auto_broadcast(False)
             kill_votes = await fanout_pipeline(
@@ -107,8 +119,8 @@ class Moderator():
     
     async def villager_part(self, alive_players: List[GameAgent], removed_player: str = None):
         print("[白天行动阶段]")
-        if not self.villagers:
-            print("没有村民了，跳过村民行动阶段")
+        if not alive_players:
+            print("没有存活玩家了，跳过白天行动阶段")
             return None
         
         if removed_player:
@@ -117,19 +129,31 @@ class Moderator():
             print("昨晚没有玩家被击杀")
         
         async with MsgHub(
-            participants=self.villagers,
+            participants=alive_players,
             enable_auto_broadcast=True,
             announcement=await self.announce(
-                f"村民们，请讨论今天的投票目标，关于你怀疑谁最有可能是狼人。只需要投票，投票完成后系统会自动击杀。决定完成之后如果不需要讨论只需要说出目标的名字，不用其他内容。存活玩家：{format_player_list([player.name for player in alive_players])}" + (f"，昨晚被击杀的玩家是{removed_player}" if removed_player else "")
+                f"各位玩家，现在是白天，请大家讨论今天的投票目标，关于你怀疑谁最有可能是狼人。只需要投票，投票完成后系统会自动击杀。决定完成之后如果不需要讨论只需要说出目标的名字，不用其他内容。存活玩家：{format_player_list([player.name for player in alive_players])}" + (f"，昨晚被击杀的玩家是{removed_player}" if removed_player else "")
             )
         ) as hub:
             for _ in range(MAX_DISCUSSION_ROUND):
-                for villager in self.villagers:
-                    await villager(structured_model=DiscussionModelCN)
+                agreements = []
+                for player in alive_players:
+                    msg = await player(structured_model=DiscussionModelCN)
+                    metadata = getattr(msg, "metadata", None)
+                    agreed = False
+                    if metadata:
+                        if hasattr(metadata, "reach_agreement"):
+                            agreed = metadata.reach_agreement
+                        elif isinstance(metadata, dict):
+                            agreed = metadata.get("reach_agreement", False)
+                    agreements.append(agreed)
+                
+                if len(alive_players) > 0 and all(agreements):
+                    break
             
             hub.set_auto_broadcast(False)
             kill_votes = await fanout_pipeline(
-                self.villagers,
+                alive_players,
                 msg=await self.announce("请选出今天的最有可能是狼人的目标"),
                 enable_gather=False,
                 structured_model=KillModelCN,
