@@ -1,12 +1,51 @@
 import os
-from pydoc import resolve
-from typing import Optional
-from aiofiles import base
-from dotenv import load_dotenv
+from typing import List, Optional, Iterator
 from openai import OpenAI
-from core import LLM
+from openai.types.chat import ChatCompletionMessageParam
+from typing import Optional
 
-class MyLLM(LLM):
+
+class LLMBase:
+    def __init__(self, base_url, apikey, model_name, provider: Optional[str] = "auto"):
+        self.base_url = base_url
+        self.apikey = apikey
+        self.model_name = model_name
+
+        self.client = OpenAI(base_url=self.base_url, api_key=self.apikey, timeout=30)
+        self.provider = provider
+
+    def think(self, prompt: List[ChatCompletionMessageParam], **kwargs) -> Optional[str]:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=prompt,
+                stream=False,
+            )
+
+            result = response.choices[0].message.content
+            return result
+
+        except Exception as e:
+            return None
+    
+    def stream_think(self, prompt: List[ChatCompletionMessageParam], **kwargs) -> Iterator[str]:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=prompt,
+                stream=True,
+            )
+
+            for chunk in response:
+                content = chunk.choices[0].delta.content
+                if content is not None:
+                    yield content  
+
+        except Exception as e:
+            return None
+
+
+class LLM(LLMBase):
     def __init__(
         self,
         model_name: Optional[str] = None,
@@ -62,19 +101,3 @@ class MyLLM(LLM):
             resolved_model_name = os.getenv("DEEPSEEK_MODEL_NAME") or "deepseek-v4-flash"
             return resolved_api_key, resolved_base_url, resolved_model_name
         
-
-
-if __name__ == "__main__":
-    load_dotenv()
-    
-    llm = MyLLM()
-    
-    messages = [
-        {'role': 'system', 'content': 'You are a helpful assistant'},
-        {'role': 'user', 'content': '你是谁? 我是猪猪! '} 
-    ]
-    
-    res = llm.think(messages)
-    
-    print("LLM Response:", res)
-
