@@ -1062,7 +1062,7 @@ wheels = [
 [[package]]
 name = "learning-agent"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "agentscope" },
     { name = "autogen-agentchat" },

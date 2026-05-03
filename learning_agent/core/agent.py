@@ -5,6 +5,15 @@ from .message import Message
 from .config import Config
 from .base import LLM
 
+class SteamableMixin(ABC):
+    @abstractmethod
+    def stream_run(self, input_text: str, **kwargs) -> Iterator[str]:
+        raise NotImplementedError("This agent does not support streaming output.")
+    
+class RunnableMixin(ABC):
+    @abstractmethod
+    def run(self, input_text: str, **kwargs) -> str:
+        raise NotImplementedError("Subclasses must implement the run method.")
 
 class Agent(ABC):
     def __init__(self, name: str, llm: LLM, system_prompt: Optional[str] = None, config: Optional[Config] = None):
@@ -13,14 +22,6 @@ class Agent(ABC):
         self.system_prompt = system_prompt
         self.config = config or Config()
         self._history: list[Message] = []
-
-    @abstractmethod
-    def run(self, input_text: str, **kwargs) -> str:
-        pass
-
-    @abstractmethod
-    def stream_run(self, input_text: str, **kwargs) -> Iterator[str]:
-        pass
 
     def _build_prompt(self, input_text: str) -> list[dict]:
         messages = []

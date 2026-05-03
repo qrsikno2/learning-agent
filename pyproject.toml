@@ -20,3 +20,6 @@ dependencies = [
     "serpapi==1.0.2",
     "tavily==1.1.0",
 ]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
