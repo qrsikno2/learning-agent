@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 from typing import Literal, Optional, Dict, Any
 from pydantic import BaseModel
 
@@ -14,7 +14,7 @@ class Message(BaseModel):
         super().__init__(
             content=content,
             role=role,
-            timestamp=kwargs.get("timestamp",datetime.now()),
+            timestamp=kwargs.get("timestamp", datetime.now()),
             metadata=kwargs.get("metadata", None)
         )
 

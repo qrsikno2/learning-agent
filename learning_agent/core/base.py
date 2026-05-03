@@ -2,7 +2,6 @@ import os
 from typing import List, Optional, Iterator
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
-from typing import Optional
 
 
 class LLMBase:
