@@ -4,7 +4,7 @@ from typing import Any, Dict, List, cast
 
 from openai.types.chat import ChatCompletionMessageParam
 
-from practices.core import LLM, Toolset
+from core import LLM, Toolset
 
 
 SYSTEM_PROMPT_TEMPLATE = """

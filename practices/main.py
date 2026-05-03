@@ -1,7 +1,7 @@
 import logging
 import os
 from dotenv import load_dotenv
-from practices.core import LLM, Toolset
+from core import LLM, Toolset
 from practices.react_agent import ReActAgent
 from practices.plan_solve_agent import PlanSolveAgent
 from practices.reflect_agent import ReflectAgent

@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional, final
 import logging
 from weakref import ref
-from practices.core import LLM
+from core import LLM
 
 INITIAL_PROMPT = """
 你是一位资深的中文程序员与架构师。请根据以下要求，快速给出编写一份简单的代码来完成任务。

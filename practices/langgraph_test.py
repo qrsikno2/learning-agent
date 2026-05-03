@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, List
-from practices.core import LLM
+from core import LLM
 
 load_dotenv()
 

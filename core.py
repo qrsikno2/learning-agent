@@ -9,12 +9,13 @@ logger = logging.getLogger("LearningAgent.Core")
 
 
 class LLM:
-    def __init__(self, base_url, apikey, model_name):
+    def __init__(self, base_url, apikey, model_name, provider: Optional[str] = "auto"):
         self.base_url = base_url
         self.apikey = apikey
         self.model_name = model_name
 
         self.client = OpenAI(base_url=self.base_url, api_key=self.apikey, timeout=30)
+        self.provider = provider
 
     def think(self, prompt: List[ChatCompletionMessageParam]) -> Optional[str]:
         try:
