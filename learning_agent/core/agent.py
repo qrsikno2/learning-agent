@@ -34,7 +34,7 @@ class Agent(ABC):
             return response
         return wrapper
 
-    def _build_prompt(self, input_text: str, custom_sys_prompt: str = None) -> list[dict]:
+    def _build_prompt(self, input_text: str = None, custom_sys_prompt: str = None) -> list[dict]:
         messages = []
         sys_prompt = custom_sys_prompt if custom_sys_prompt is not None else self.system_prompt
         if sys_prompt:
@@ -42,11 +42,14 @@ class Agent(ABC):
         for msg in self._history:
             messages.append({"role": msg.role, "content": msg.content})
 
-        messages.append({"role": "user", "content": input_text})
+        if input_text is not None:
+            messages.append({"role": "user", "content": input_text})
         return messages
 
     def add_message(self, message: Message):
         self._history.append(message)
+        if self.config.debug:
+            print(f"{message}")
         if len(self._history) > self.config.max_history_length:
             self._history = self._history[-self.config.max_history_length:]
 
