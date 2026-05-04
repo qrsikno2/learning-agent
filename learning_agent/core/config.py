@@ -27,5 +27,5 @@ class Config(BaseModel):
     def to_dict(self) -> Dict[str, Any]:
         return self.model_dump()
     
-    def larger_than_info(self):
+    def is_verbose(self) -> bool:
         return self.log_level in ["INFO", "WARN", "ERROR", "CRITICAL"]

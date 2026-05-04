@@ -1,8 +1,7 @@
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Iterator
 
-from learning_agent.core import Agent, RunnableMixin, ToolRegistry, Config, LLM, Message, ToolCallMixin
-from learning_agent.tools import DateTimeTool, TavilySearchTool
+from learning_agent.core import Agent, RunnableMixin, StreamableMixin, ToolRegistry, Config, LLM, Message, ToolCallMixin
 
 REACT_PROMPT = """你是一个具备推理和行动能力的AI助手。你可以通过思考分析问题，然后调用合适的工具来获取信息，最终给出准确的答案。
 
@@ -33,7 +32,7 @@ Action: 选择一个行动，格式必须是以下之一:
 """
 
 
-class ReActAgent(Agent, RunnableMixin, ToolCallMixin):
+class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
     def __init__(
         self,
         name: str,
@@ -138,8 +137,76 @@ class ReActAgent(Agent, RunnableMixin, ToolCallMixin):
         self.add_message(Message(content=fallback_answer, role="assistant"))
         return fallback_answer
 
+    def stream_run(self, input_text: str, **kwargs) -> Iterator[str]:
+        self.current_history = []
+        current_step = 0
+
+        while current_step < self.max_steps:
+            current_step += 1
+
+            tools_desc = self.tool_registry.get_tools_description() or "无可用工具"
+            history_str = "\n".join(self.current_history) or "（尚未执行任何操作）"
+            prompt = self.prompt_template.format(
+                tools=tools_desc,
+                question=input_text,
+                history=history_str,
+            )
+
+            messages = [{"role": "user", "content": prompt}]
+            
+            full_response = ""
+            for chunk in self.llm.stream_think(messages, **kwargs):
+                if chunk:
+                    full_response += chunk
+                    # yield chunk
+
+            if not full_response:
+                self.current_history.append("（LLM未返回有效响应）")
+                continue
+
+            parsed = self._parse_response(full_response)
+            thought = parsed.get("thought", "")
+            action = parsed.get("action") or {}
+
+            if not action:
+                self.current_history.append(f"Invalid Response: {full_response}")
+                continue
+
+            if thought:
+                self.current_history.append(f"Thought: {thought}")
+                yield f"[思考]: {thought}\n"
+            action_name = action.get("name", "")
+            action_input = action.get("input", "")
+
+            if action_name == "Finish":
+                self.add_message(Message(content=input_text, role="user"))
+                self.add_message(Message(content=action_input, role="assistant"))
+                yield f"[最终回答]: {action_input}\n"
+                return 
+                
+            if not action_name:
+                self.current_history.append(f"Invalid Action: {action}")
+                continue
+
+            self.current_history.append(f"Action: {action_name}[{action_input}]")
+            yield f"[调用工具: {action_name}]\n"
+
+            try:
+                result = self.tool_registry.execute(action_name, action_input)
+                yield f"[工具结果: name={action_name}, result={result}]\n"
+            except Exception as e:
+                result = f"工具执行失败: {e}"
+
+            self.current_history.append(f"Observation: {result}")
+
+        fallback_answer = "抱歉，我无法在限定步数内完成这个任务。"
+        self.add_message(Message(content=input_text, role="user"))
+        self.add_message(Message(content=fallback_answer, role="assistant"))
+        yield fallback_answer
+
 if __name__ == "__main__":
     from dotenv import load_dotenv
+    from learning_agent.tools import DateTimeTool, TavilySearchTool
     load_dotenv()
 
     llm = LLM()
@@ -149,8 +216,15 @@ if __name__ == "__main__":
     # config = Config(debug=True, log_level="DEBUG")
     config = Config()
     
-    agent = ReActAgent(name="ReActAgent", llm=llm, tool_registry=registry, config=config)
-    question = "帮我制定一个明天北京的旅游计划？"
-    answer = agent.run(question)
-    print(f"最终回答: {answer}")
+    # agent = ReActAgent(name="ReActAgent", llm=llm, tool_registry=registry, config=config)
+    # question = "帮我制定一个明天北京的旅游计划？"
+    # answer = agent.run(question)
+    # print(f"最终回答: {answer}")
+    
+    agent2 = ReActAgent(name="ReActAgentStream", llm=llm, tool_registry=registry, config=config)
+    question = "帮我制定一个明天南京的旅游计划？"
+    print("Streaming回答:")
+    for chunk in agent2.stream_run(question):
+        print(chunk, end="")
+
     
