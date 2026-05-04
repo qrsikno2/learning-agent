@@ -22,11 +22,23 @@ class Agent(ABC):
         self.system_prompt = system_prompt
         self.config = config or Config()
         self._history: list[Message] = []
+    
+    @staticmethod
+    def print_turns(func):
+        def wrapper(self, input_text: str, **kwargs) -> str:
+            if self.config.larger_than_info():
+                print(f"用户输入: {input_text}")
+            response = func(self, input_text, **kwargs)
+            if self.config.larger_than_info():
+                print(f"助手回复: {response}")
+            return response
+        return wrapper
 
-    def _build_prompt(self, input_text: str) -> list[dict]:
+    def _build_prompt(self, input_text: str, custom_sys_prompt: str = None) -> list[dict]:
         messages = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
+        sys_prompt = custom_sys_prompt if custom_sys_prompt is not None else self.system_prompt
+        if sys_prompt:
+            messages.append({"role": "system", "content": sys_prompt})
         for msg in self._history:
             messages.append({"role": msg.role, "content": msg.content})
 

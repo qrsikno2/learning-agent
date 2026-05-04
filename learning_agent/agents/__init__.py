@@ -1,4 +1,4 @@
 from .echo_agent import EchoAgent
-from .simple_agent import SimpleAgentBase
+from .simple_agent import SimpleAgent
 
-__all__ = ["EchoAgent", "SimpleAgentBase"]
+__all__ = ["EchoAgent", "SimpleAgent"]

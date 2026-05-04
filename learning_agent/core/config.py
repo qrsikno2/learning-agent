@@ -1,6 +1,8 @@
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 from pydantic import BaseModel
+
+log_levels = Literal["DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"]
 
 class Config(BaseModel):
     default_model: str = "deepseek-v4-flash"
@@ -9,7 +11,7 @@ class Config(BaseModel):
     max_tokens: Optional[int] = None
     
     debug: bool = False
-    log_level: str = "INFO"
+    log_level: log_levels = "INFO"
     
     max_history_length: int = 2000
     
@@ -24,3 +26,6 @@ class Config(BaseModel):
     
     def to_dict(self) -> Dict[str, Any]:
         return self.model_dump()
+    
+    def larger_than_info(self):
+        return self.log_level in ["INFO", "WARN", "ERROR", "CRITICAL"]

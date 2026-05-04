@@ -40,7 +40,7 @@ class ToolRegistry:
         return self.tools.get(name)
 
     def get_tools_description(self) -> str:
-        return "\n".join(
+        return None if self.tools is None else "\n".join(
             [tool._generate_info() for tool in self.tools.values()]
         )
         
