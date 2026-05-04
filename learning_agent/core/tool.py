@@ -81,6 +81,7 @@ class Tool(ABC):
                 }
             }
         } 
+
 class SimpleFunctionTool(Tool):
     def __init__(self, name: str, description: str, func: Callable[[str], str]):
         super().__init__(name, description)
