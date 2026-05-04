@@ -1,10 +1,10 @@
 import re
 from learning_agent.core import Agent, Tool, ToolRegistry, Config, LLM, Message
-from learning_agent.core import RunnableMixin
+from learning_agent.core import RunnableMixin, ToolCallMixin
 from typing import List, Iterator
 
 
-class SimpleAgent(Agent, RunnableMixin):
+class SimpleAgent(Agent, RunnableMixin, ToolCallMixin):
     def __init__(
         self, 
         name: str, 
@@ -121,14 +121,11 @@ class SimpleAgent(Agent, RunnableMixin):
             return "错误：没有工具注册中心，无法执行工具调用。"
         
         try:
-            if tool_name == 'calculator':
-                result = self.tool_registry.execute(tool_name, parameters)
-            else:
-                param_dict = self._parse_tool_parameters(tool_name, parameters)
-                tool = self.tool_registry.get_tool(tool_name)
-                if not tool:
-                    return f"错误：未找到工具 '{tool_name}'。请检查工具名称是否正确，并确保该工具已注册。"
-                result = tool.run(param_dict)
+            param_dict = self._parse_tool_parameters(tool_name, parameters)
+            tool = self.tool_registry.get_tool(tool_name)
+            if not tool:
+                return f"错误：未找到工具 '{tool_name}'。请检查工具名称是否正确，并确保该工具已注册。"
+            result = tool.run(param_dict)
             return f"工具 '{tool_name}' 调用结果：{result}"
             
         except Exception as e:
@@ -154,22 +151,7 @@ class SimpleAgent(Agent, RunnableMixin):
         
         return ret
     
-    def add_tools(self, tool) -> None:
-        if not self.tool_registry:
-            self.tool_registry = ToolRegistry()
-            self.enable_tool_calling = True
-        
-        self.tool_registry.register(tool)
-    
-    def has_tools(self) -> bool:
-        return self.enable_tool_calling and self.tool_registry is not None
-    
-    def remove_tool(self, tool_name: str) -> bool:
-        return False if not self.tool_registry else self.tool_registry.unregister(tool_name)
-    
-    def list_tools(self) -> list:
-        return [] if not self.tool_registry else self.tool_registry.list_tools()
-    
+
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()

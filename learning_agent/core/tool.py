@@ -17,7 +17,7 @@ class Tool(ABC):
     def __str__(self):
         return f"Tool(name={self.name}, description={self.description})"
 
-    def _generate_info(self) -> Dict[str, Any]:
+    def _generate_info(self) -> str:
         return f"{self.name}: {self.description}"
 
 class ToolRegistry:

@@ -1,7 +1,7 @@
 import re
 from typing import Dict, List, Optional
 
-from learning_agent.core import Agent, RunnableMixin, ToolRegistry, Config, LLM, Message
+from learning_agent.core import Agent, RunnableMixin, ToolRegistry, Config, LLM, Message, ToolCallMixin
 from learning_agent.tools import DateTimeTool, TavilySearchTool
 
 REACT_PROMPT = """你是一个具备推理和行动能力的AI助手。你可以通过思考分析问题，然后调用合适的工具来获取信息，最终给出准确的答案。
@@ -33,7 +33,7 @@ Action: 选择一个行动，格式必须是以下之一:
 """
 
 
-class ReActAgent(Agent, RunnableMixin):
+class ReActAgent(Agent, RunnableMixin, ToolCallMixin):
     def __init__(
         self,
         name: str,
@@ -46,6 +46,7 @@ class ReActAgent(Agent, RunnableMixin):
     ):
         super().__init__(name=name, llm=llm, system_prompt=system_prompt, config=config)
         self.tool_registry = tool_registry
+        self.enable_tool_calling = True
         self.max_steps = max_steps
         self.current_history: List[str] = []
         self.prompt_template = custom_prompt if custom_prompt else REACT_PROMPT
@@ -137,22 +138,6 @@ class ReActAgent(Agent, RunnableMixin):
         self.add_message(Message(content=fallback_answer, role="assistant"))
         return fallback_answer
 
-    def add_tools(self, tool) -> None:
-        if not self.tool_registry:
-            self.tool_registry = ToolRegistry()
-            self.enable_tool_calling = True
-        
-        self.tool_registry.register(tool)
-    
-    def has_tools(self) -> bool:
-        return self.enable_tool_calling and self.tool_registry is not None
-    
-    def remove_tool(self, tool_name: str) -> bool:
-        return False if not self.tool_registry else self.tool_registry.unregister(tool_name)
-    
-    def list_tools(self) -> list:
-        return [] if not self.tool_registry else self.tool_registry.list_tools()
-    
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
