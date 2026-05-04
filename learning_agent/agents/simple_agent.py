@@ -21,7 +21,7 @@ class SimpleAgent(Agent, RunnableMixin, ToolCallMixin):
     def _get_enhanced_system_prompt(self) -> str:
         base_prompt = self.system_prompt or "你是一个很牛的助手."
         
-        if not self.enable_tool_calling or not self.tool_registry.tools:
+        if not self.enable_tool_calling or not self.tool_registry._tools:
             return base_prompt
         
         tools_description = self.tool_registry.get_tools_description()

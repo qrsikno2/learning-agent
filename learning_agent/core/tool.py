@@ -1,54 +1,80 @@
 from typing import Callable, Dict, Any, Optional
-
+from pydantic import BaseModel
 from abc import ABC, abstractmethod
+
+class ToolParamter(BaseModel):
+    name: str
+    type: str
+    description: str
+    required: bool = True
+    default: Any = None
+    
+    def get_description(self) -> str:
+        return f"name={self.name} (type:{self.type}), description: {self.description}, {'required' if self.required else 'optional'}, default={self.default}"
 
 class Tool(ABC):
     name: str
     description: str
     
-    def __init__(self, name: str, description: str):
+    def __init__(self, name: str, description: str, parameters: Optional[list[ToolParamter]] = None):
         self.name = name
         self.description = description
-    
+        self._parameters = parameters or []
+
     @abstractmethod
     def run(self, params: dict) -> str:
         pass
+    
+    def get_parameters(self) -> list[ToolParamter]:
+        return self._parameters
 
     def __str__(self):
         return f"Tool(name={self.name}, description={self.description})"
 
     def _generate_info(self) -> str:
-        return f"{self.name}: {self.description}"
+        return f"Tool(name={self.name}): description={self.description}, Parameters: [{', '.join([param.get_description() for param in self.get_parameters()])}]"
+
+class SimpleFunctionTool(Tool):
+    def __init__(self, name: str, description: str, func: Callable[[str], str]):
+        super().__init__(name, description)
+        self.func = func
+
+    def run(self, param: str) -> str:
+        return self.func(param)
+
+    def get_parameters(self) -> list[ToolParamter]:
+        return [ToolParamter(name="input", type="string", description="输入参数")]
 
 class ToolRegistry:
     def __init__(self):
-        self.tools = {}
+        self._tools = {}
 
     def register(self, tool: Tool) -> bool:
-        if tool.name in self.tools:
+        if tool.name in self._tools:
             return False
-        self.tools[tool.name] = tool
+        self._tools[tool.name] = tool
         return True
 
     def unregister(self, name: str) -> bool:
-        if name not in self.tools:
+        if name not in self._tools:
             return False
-        del self.tools[name]
+        del self._tools[name]
         return True
     
     def get_tool(self, name: str) -> Optional[Tool]:
-        return self.tools.get(name)
+        return self._tools.get(name)
 
     def get_tools_description(self) -> str:
-        return None if self.tools is None else "\n".join(
-            [tool._generate_info() for tool in self.tools.values()]
+        return None if self._tools is None else "\n".join(
+            [tool._generate_info() for tool in self._tools.values()]
         )
         
     def list_tools(self) -> list[str]:
-        return list(self.tools.keys())
+        return list(self._tools.keys())
 
     def execute(self, name: str, params) -> str:
         tool = self.get_tool(name)
         if not tool:
             raise ValueError(f"Tool not found: {name}")
         return tool.run(params)
+

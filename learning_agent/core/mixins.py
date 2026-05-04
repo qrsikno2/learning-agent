@@ -26,7 +26,7 @@ class ToolCallMixin:
         self.tool_registry.register(tool)
 
     def has_tools(self) -> bool:
-        return self.enable_tool_calling and self.tool_registry is not None and bool(self.tool_registry.tools)
+        return self.enable_tool_calling and self.tool_registry is not None and bool(self.tool_registry._tools)
 
     def remove_tool(self, tool_name: str) -> bool:
         if not self.tool_registry:
