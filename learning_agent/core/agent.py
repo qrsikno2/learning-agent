@@ -5,7 +5,7 @@ from .message import Message
 from .config import Config
 from .base import LLM
 
-class SteamableMixin(ABC):
+class StreamableMixin(ABC):
     @abstractmethod
     def stream_run(self, input_text: str, **kwargs) -> Iterator[str]:
         raise NotImplementedError("This agent does not support streaming output.")

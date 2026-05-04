@@ -43,6 +43,9 @@ class ToolRegistry:
         return "\n".join(
             [tool._generate_info() for tool in self.tools.values()]
         )
+        
+    def list_tools(self) -> list[str]:
+        return list(self.tools.keys())
 
     def execute(self, name: str, params) -> str:
         tool = self.get_tool(name)

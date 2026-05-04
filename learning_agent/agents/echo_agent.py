@@ -2,15 +2,15 @@ from typing import Iterator
 
 from dotenv import load_dotenv
 
-from learning_agent.core import Agent, RunnableMixin, SteamableMixin
+from learning_agent.core import Agent, RunnableMixin, StreamableMixin
 from learning_agent.core import LLM
 
 class EchoAgent(Agent, RunnableMixin):
-    def run(self, input_text: str, **kwargs) -> Iterator[str]:
+    def run(self, input_text: str, **kwargs) -> str:
         message = self._build_prompt(input_text)
         return self.llm.stream_think(message, **kwargs)
 
-class StreamEchoAgent(Agent, SteamableMixin):
+class StreamEchoAgent(Agent, StreamableMixin):
     def stream_run(self, input_text: str, **kwargs) -> Iterator[str]:
         message = self._build_prompt(input_text)
         return self.llm.stream_think(message, **kwargs)
