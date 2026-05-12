@@ -1,8 +1,10 @@
-import re
+import re, json
 from learning_agent.core import Agent, Tool, ToolRegistry, Config, LLM, Message
 from learning_agent.core import RunnableMixin, ToolCallMixin
-from learning_agent.tools import MemoryTool, my_calculator_tool, DateTimeTool
+from learning_agent.tools import MemoryTool, MyCalculatorTool, DateTimeTool
 from typing import List, Iterator
+
+from learning_agent.tools.my_calculator_tool import MyCalculatorTool
 
 
 class SimpleAgent(Agent, RunnableMixin, ToolCallMixin):
@@ -133,15 +135,21 @@ class SimpleAgent(Agent, RunnableMixin, ToolCallMixin):
             return f"工具调用失败：{str(e)}"
         
     def _parse_tool_parameters(self, tool_name: str, params: str) -> dict:
+        try: 
+            return json.loads(params)
+        except:
+            pass
+
         ret = {}
         
         if '=' in params:
             # Key=Value Or action=search, query=python
+            params = params.replace('&', ',')
             pairs = params.split(',')
             for pair in pairs:
                 if '=' in pair:
                     key, value = pair.split('=', 1)
-                    ret[key.strip()] = value.strip()
+                    ret[key.strip()] = value.strip().strip("'\"")
         else:
             ret['input'] = params
         
@@ -156,8 +164,10 @@ if __name__ == "__main__":
 
     registry = ToolRegistry()
     registry.register(MemoryTool())
+    registry.register(MyCalculatorTool())
+    registry.register(DateTimeTool())
     agent2 = SimpleAgent(name="增强助手", llm=llm, system_prompt="你是一个智能助手，可以利用工具来帮助用户。", tool_registry=registry, enable_tool_calling=True)
-    resp = agent2.run("请计算一下 15*8+32 的结果")
+    resp = agent2.run("我爱死了python,但是请计算一下 f(x) = 3x^2 - 6x + 2 的根")
     print(f"响应如下:\n{resp}\n")
     
     print("流式响应: ", end="")

@@ -88,6 +88,9 @@ class SimpleFunctionTool(Tool):
         self.func = func
 
     def run(self, param: str) -> str:
+        if isinstance(param, dict):
+            param = param.get("input", list(param.values())[0] if param else "")
+            return self.func(param)
         return self.func(param)
 
     def get_parameters(self) -> list[ToolParameter]:
