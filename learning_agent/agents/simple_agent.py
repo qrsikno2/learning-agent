@@ -1,6 +1,7 @@
 import re
 from learning_agent.core import Agent, Tool, ToolRegistry, Config, LLM, Message
 from learning_agent.core import RunnableMixin, ToolCallMixin
+from learning_agent.tools import MemoryTool, my_calculator_tool, DateTimeTool
 from typing import List, Iterator
 
 
@@ -142,12 +143,7 @@ class SimpleAgent(Agent, RunnableMixin, ToolCallMixin):
                     key, value = pair.split('=', 1)
                     ret[key.strip()] = value.strip()
         else:
-            if tool_name == 'search':
-                ret['query'] = params
-            elif tool_name == 'memory':
-                ret = {'action': 'search', 'query': params}
-            else:
-                ret['input'] = params
+            ret['input'] = params
         
         return ret
     
@@ -158,29 +154,8 @@ if __name__ == "__main__":
 
     llm = LLM()
 
-    # === 测试1: 基础对话（无工具） ===
-    print("=== 测试1: 基础对话 ===")
-    agent1 = SimpleAgent(name="基础助手", llm=llm, system_prompt="你是一个友好的助手，请用简洁的方式回答问题。", enable_tool_calling=False)
-    response = agent1.run("你好，请简单介绍一下你自己")
-    print(f"响应: {response}\n")
-    print("✅ 测试1 通过\n")
-
-    # === 测试2: 带工具的对话 ===
-    print("=== 测试2: 工具增强对话 ===")
-    class _CalcTool(Tool):
-        def __init__(self):
-            super().__init__("calculator", "计算数学表达式，输入如 15*8+32 返回计算结果")
-        def run(self, params) -> str:
-            expr = params if isinstance(params, str) else params.get("expression", params.get("input", ""))
-            if not expr:
-                return "错误：未提供表达式"
-            try:
-                return str(eval(expr))
-            except Exception as e:
-                return f"计算错误: {e}"
-
     registry = ToolRegistry()
-    registry.register(_CalcTool())
+    registry.register(MemoryTool())
     agent2 = SimpleAgent(name="增强助手", llm=llm, system_prompt="你是一个智能助手，可以利用工具来帮助用户。", tool_registry=registry, enable_tool_calling=True)
     resp = agent2.run("请计算一下 15*8+32 的结果")
     print(f"响应如下:\n{resp}\n")
@@ -189,21 +164,6 @@ if __name__ == "__main__":
     for chunk in agent2.stream_run("写一篇关于为什么人类要运动的文章"):
         print(chunk, end="")
     print()
-    print("✅ 测试2 通过\n")
-
-    # === 测试3: 历史记录 ===
-    print("=== 测试3: 历史记录 ===")
-    history = agent1.get_history()
-    print(f"历史消息数: {len(history)}")
-    for msg in history:
-        print(f"  [{msg.role}] {msg.content[:60]}...")
-    print("✅ 测试3 通过\n")
-
-    # === 测试4: 空工具注册表 ===
-    print("=== 测试4: 空工具注册表的Agent ===")
-    agent3 = SimpleAgent(name="无工具助手", llm=llm, system_prompt="简洁回答", tool_registry=ToolRegistry(), enable_tool_calling=True)
-    response = agent3.run("1+1等于几？")
-    print(f"响应: {response}\n")
-    print("✅ 测试4 通过\n")
-
-    print("🎉 全部测试完成")
+    
+    resp = agent2.run("请帮我回忆一下我之前告诉你的关于我的信息")
+    print(f"响应如下:\n{resp}\n")

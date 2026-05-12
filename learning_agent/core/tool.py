@@ -2,7 +2,7 @@ from typing import Callable, Dict, Any, Optional
 from pydantic import BaseModel
 from abc import ABC, abstractmethod
 
-class ToolParamter(BaseModel):
+class ToolParameter(BaseModel):
     name: str
     type: str
     description: str
@@ -16,7 +16,7 @@ class Tool(ABC):
     name: str
     description: str
     
-    def __init__(self, name: str, description: str, parameters: Optional[list[ToolParamter]] = None):
+    def __init__(self, name: str, description: str, parameters: Optional[list[ToolParameter]] = None):
         self.name = name
         self.description = description
         self._parameters = parameters or []
@@ -25,7 +25,7 @@ class Tool(ABC):
     def run(self, params: dict) -> str:
         pass
     
-    def get_parameters(self) -> list[ToolParamter]:
+    def get_parameters(self) -> list[ToolParameter]:
         return self._parameters
 
     def __str__(self):
@@ -90,8 +90,8 @@ class SimpleFunctionTool(Tool):
     def run(self, param: str) -> str:
         return self.func(param)
 
-    def get_parameters(self) -> list[ToolParamter]:
-        return [ToolParamter(name="input", type="string", description="输入参数")]
+    def get_parameters(self) -> list[ToolParameter]:
+        return [ToolParameter(name="input", type="string", description="输入参数")]
 
 class ToolRegistry:
     def __init__(self):
