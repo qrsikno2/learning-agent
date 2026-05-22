@@ -23,8 +23,8 @@ class TavilySearchTool(Tool):
         if not query:
             return "错误：未提供搜索关键词"
 
-        api_key = "tvly-dev-" + os.environ.get("TAVILY_API_KEY", "")
-        if not api_key or api_key == "tvly-dev-":
+        api_key = os.environ.get("TAVILY_API_KEY", "")
+        if not api_key:
             return "错误：TAVILY_API_KEY 环境变量未设置"
 
         try:

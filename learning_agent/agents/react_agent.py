@@ -155,10 +155,11 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
             messages = [{"role": "user", "content": prompt}]
             
             full_response = ""
+            yield "[思考]: "
             for chunk in self.llm.stream_think(messages, **kwargs):
                 if chunk:
                     full_response += chunk
-                    # yield chunk
+                    yield chunk
 
             if not full_response:
                 self.current_history.append("（LLM未返回有效响应）")
@@ -174,7 +175,6 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
 
             if thought:
                 self.current_history.append(f"Thought: {thought}")
-                yield f"[思考]: {thought}\n"
             action_name = action.get("name", "")
             action_input = action.get("input", "")
 
