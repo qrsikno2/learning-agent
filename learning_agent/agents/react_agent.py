@@ -1,9 +1,13 @@
 import json
+import logging
 import re
 from typing import Dict, List, Optional, Iterator
 
 from learning_agent.core import Agent, RunnableMixin, StreamableMixin, ToolRegistry, Config, LLM, Message, ToolCallMixin
 from learning_agent.core.base import LLMResponse
+from learning_agent.core.console import print_tool_call, print_tool_result, print_final_answer
+
+logger = logging.getLogger(__name__)
 
 REACT_PROMPT = """你是一个具备推理和行动能力的AI助手。你可以通过思考分析问题，然后调用合适的工具来获取信息，最终给出准确的答案。
 
@@ -126,8 +130,8 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
 
             if thought:
                 self.current_history.append(f"Thought: {thought}")
-            if self.config.debug:
-                print(f"LLM Thought: {thought}")
+                print_tool_call("思考", thought)
+                logger.debug("LLM Thought: %s", thought)
             action_name = action.get("name", "")
             action_input = action.get("input", "")
 
@@ -141,13 +145,13 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
                 continue
 
             self.current_history.append(f"Action: {action_name}[{action_input}]")
-            if self.config.debug:
-                print(f"LLM Action: {action_name}[{action_input}]")
+            print_tool_call(action_name, action_input)
+            logger.debug("LLM Action: %s[%s]", action_name, action_input)
 
             try:
                 result = self.tool_registry.execute(action_name, action_input)
-                if self.config.debug:
-                    print(f"工具执行结果: {result}")
+                print_tool_result(action_name, result)
+                logger.debug("工具执行结果: %s", result)
             except Exception as e:
                 result = f"工具执行失败: {e}"
 
@@ -210,8 +214,8 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
                 except (json.JSONDecodeError, TypeError):
                     tool_args = tool_args_raw
 
-                if self.config.debug:
-                    print(f"Function Call: {tool_name}({tool_args})")
+                print_tool_call(tool_name, tool_args)
+                logger.debug("Function Call: %s(%s)", tool_name, tool_args)
 
                 self.current_history.append(f"Action: {tool_name}({tool_args})")
 
@@ -220,8 +224,8 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
                 except Exception as e:
                     result = f"工具执行失败: {e}"
 
-                if self.config.debug:
-                    print(f"工具执行结果: {result}")
+                print_tool_result(tool_name, result)
+                logger.debug("工具执行结果: %s", result)
 
                 self.current_history.append(f"Observation: {result}")
 
@@ -237,8 +241,7 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
         return fallback_answer
 
     def _fallback_one_step(self, input_text: str, **kwargs) -> Optional[str]:
-        if self.config.debug:
-            print("Function calling 失败，降级回正则模式重试当前步骤")
+        logger.debug("Function calling 失败，降级回正则模式重试当前步骤")
 
         tools_desc = self.tool_registry.get_tools_description() or "无可用工具"
         history_str = "\n".join(self.current_history) or "（尚未执行任何操作）"
@@ -356,17 +359,19 @@ if __name__ == "__main__":
     from learning_agent.tools import DateTimeTool, TavilySearchTool
     load_dotenv()
 
+    logger = logging.getLogger("learning_agent.agents.react_agent")
+
     llm = LLM()
     registry = ToolRegistry()
     registry.register(DateTimeTool())
     registry.register(TavilySearchTool())
-    config = Config(debug=True, log_level="DEBUG")
-    # config = Config()
+    config = Config().from_env()
+    config.setup_logging()
     
     agent = ReActAgent(name="ReActAgent", llm=llm, tool_registry=registry, config=config, enable_function_calling=True)
     question = "帮我制定一个明天北京的旅游计划？"
     answer = agent.run(question)
-    print(f"最终回答: {answer}")
+    print_final_answer(answer)
     
     # agent2 = ReActAgent(name="ReActAgentStream", llm=llm, tool_registry=registry, config=config)
     # question = "帮我制定一个明天南京的旅游计划？"

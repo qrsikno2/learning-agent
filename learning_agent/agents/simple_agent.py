@@ -1,10 +1,14 @@
+import logging
 import re, json
 from learning_agent.core import Agent, Tool, ToolRegistry, Config, LLM, Message
 from learning_agent.core import RunnableMixin, ToolCallMixin
+from learning_agent.core.console import print_tool_call, print_tool_result
 from learning_agent.tools import MemoryTool, MyCalculatorTool, DateTimeTool
 from typing import List, Iterator
 
 from learning_agent.tools.my_calculator_tool import MyCalculatorTool
+
+logger = logging.getLogger(__name__)
 
 
 class SimpleAgent(Agent, RunnableMixin, ToolCallMixin):
@@ -86,7 +90,9 @@ class SimpleAgent(Agent, RunnableMixin, ToolCallMixin):
                 for call in tool_calls:
                     result = self._execute_tool_call(call['tool_name'], call['parameters'])
                     tool_results.append(result)
-                    print(f"Tool calling: {call['tool_name']} with params {call['parameters']} -> Result: {result}")
+                    print_tool_call(call['tool_name'], call['parameters'])
+                    print_tool_result(call['tool_name'], result)
+                    logger.debug("Tool calling: %s with params %s -> Result: %s", call['tool_name'], call['parameters'], result)
                     clean_res = clean_res.replace(call['original'], "")
                     
                 msgs.append({"role": "assistant", "content": clean_res})

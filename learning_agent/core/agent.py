@@ -1,9 +1,13 @@
+import logging
 from abc import ABC
 from typing import Optional
 
 from .message import Message
 from .config import Config
 from .base import LLM
+from .console import print_user_input, print_assistant_reply
+
+logger = logging.getLogger(__name__)
 
 class Agent(ABC):
     def __init__(self, name: str, llm: LLM, system_prompt: Optional[str] = None, config: Optional[Config] = None):
@@ -16,11 +20,9 @@ class Agent(ABC):
     @staticmethod
     def print_turns(func):
         def wrapper(self, input_text: str, **kwargs) -> str:
-            if self.config.is_verbose():
-                print(f"用户输入: {input_text}")
+            print_user_input(input_text)
             response = func(self, input_text, **kwargs)
-            if self.config.is_verbose():
-                print(f"助手回复: {response}")
+            print_assistant_reply(response)
             return response
         return wrapper
 
@@ -38,8 +40,7 @@ class Agent(ABC):
 
     def add_message(self, message: Message):
         self._history.append(message)
-        if self.config.debug:
-            print(f"{message}")
+        logger.debug("%s", message)
         if len(self._history) > self.config.max_history_length:
             self._history = self._history[-self.config.max_history_length:]
 

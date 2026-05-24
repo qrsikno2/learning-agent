@@ -44,12 +44,13 @@ class TavilySearchTool(Tool):
                 snippets = []
                 for i, r in enumerate(results[:3], 1):
                     title = r.get("title", "")
-                    content = r.get("content", "")[:200]
+                    content = r.get("content", "")[:120].replace("\n", " ").strip()
                     url = r.get("url", "")
-                    snippets.append(f"{i}. {title}\n   {content}\n   来源: {url}")
+                    snippets.append(f"[{i}] {title}\n    {content}\n    {url}")
+                refs = "\n".join(snippets)
                 if answer:
-                    return answer + "\n\n---\n" + "\n".join(snippets)
-                return "\n".join(snippets)
+                    return f"{answer}\n\nReferences:\n{refs}"
+                return refs
             return answer or "没有找到相关信息"
         except Exception as e:
             return f"搜索执行失败: {e}"
