@@ -1,10 +1,25 @@
 import logging
 import os
-from typing import List, Optional, Iterator
+from dataclasses import dataclass, field
+from typing import Any, List, Optional, Iterator
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LLMResponse:
+    content: Optional[str] = None
+    tool_calls: Optional[list] = None
+    raw: Any = None
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
+
+    def get_text(self) -> str:
+        return self.content or ""
 
 
 class LLMBase:
@@ -54,6 +69,28 @@ class LLMBase:
 
         except Exception as e:
             logger.error(f"LLM stream call failed: {e}")
+            return None
+
+    def think_with_tools(self, prompt: List[ChatCompletionMessageParam], tools: list, **kwargs) -> Optional[LLMResponse]:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=prompt,
+                tools=tools,
+                stream=False,
+                temperature=kwargs.get("temperature", self.temperature),
+                max_tokens=kwargs.get("max_tokens", self.max_tokens),
+            )
+
+            message = response.choices[0].message
+            return LLMResponse(
+                content=message.content,
+                tool_calls=message.tool_calls,
+                raw=response,
+            )
+
+        except Exception as e:
+            logger.error(f"LLM think_with_tools call failed: {e}")
             return None
 
 

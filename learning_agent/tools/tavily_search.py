@@ -1,12 +1,15 @@
 import os
-from learning_agent.core import Tool
+from learning_agent.core import Tool, ToolParameter
 
 
 class TavilySearchTool(Tool):
     def __init__(self):
         super().__init__(
             name="search",
-            description="搜索互联网获取最新信息，输入搜索关键词，返回搜索结果摘要"
+            description="搜索互联网获取最新信息，输入搜索关键词，返回搜索结果摘要",
+            parameters=[
+                ToolParameter(name="query", type="string", description="搜索关键词", required=True)
+            ]
         )
 
     def run(self, params) -> str:

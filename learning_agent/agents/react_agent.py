@@ -1,7 +1,9 @@
+import json
 import re
 from typing import Dict, List, Optional, Iterator
 
 from learning_agent.core import Agent, RunnableMixin, StreamableMixin, ToolRegistry, Config, LLM, Message, ToolCallMixin
+from learning_agent.core.base import LLMResponse
 
 REACT_PROMPT = """你是一个具备推理和行动能力的AI助手。你可以通过思考分析问题，然后调用合适的工具来获取信息，最终给出准确的答案。
 
@@ -31,6 +33,18 @@ Action: 选择一个行动，格式必须是以下之一:
 现在开始你的推理和行动:
 """
 
+FC_REACT_PROMPT = """你是一个具备推理和行动能力的AI助手。
+请分析问题，调用合适的工具获取信息，最终给出准确的答案。
+每一步请先说明你的推理过程，然后决定是否需要调用工具。
+当你有足够信息时，直接给出最终答案。
+
+## 当前任务
+**Question:** {question}
+
+## 执行历史
+{history}
+"""
+
 
 class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
     def __init__(
@@ -42,6 +56,7 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
         config: Optional[Config] = None,
         max_steps: int = 10,
         custom_prompt: Optional[str] = None,
+        enable_function_calling: bool = False,
     ):
         super().__init__(name=name, llm=llm, system_prompt=system_prompt, config=config)
         self.tool_registry = tool_registry
@@ -49,6 +64,7 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
         self.max_steps = max_steps
         self.current_history: List[str] = []
         self.prompt_template = custom_prompt if custom_prompt else REACT_PROMPT
+        self.enable_function_calling = enable_function_calling
 
     def _parse_response(self, response: str) -> Dict[str, str]:
         thought_match = re.match(
@@ -74,6 +90,11 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
 
     @Agent.print_turns
     def run(self, input_text: str, **kwargs) -> str:
+        if self.enable_function_calling:
+            return self._run_with_function_calling(input_text, **kwargs)
+        return self._run_with_regex(input_text, **kwargs)
+
+    def _run_with_regex(self, input_text: str, **kwargs) -> str:
         self.current_history = []
         current_step = 0
 
@@ -137,6 +158,133 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
         self.add_message(Message(content=fallback_answer, role="assistant"))
         return fallback_answer
 
+    def _run_with_function_calling(self, input_text: str, **kwargs) -> str:
+        self.current_history = []
+        tools_schema = self.tool_registry.get_openai_tools()
+        messages: List[dict] = []
+
+        for step in range(self.max_steps):
+            history_str = "\n".join(self.current_history) 
+            prompt = FC_REACT_PROMPT.format(question=input_text, history=history_str)
+            messages = [{"role": "user", "content": prompt}]
+
+            response = self.llm.think_with_tools(messages, tools=tools_schema, **kwargs)
+
+            if response is None:
+                fallback = self._fallback_one_step(input_text, **kwargs)
+                if fallback is not None:
+                    return fallback
+                continue
+
+            if not response.has_tool_calls:
+                answer = response.get_text()
+                if not answer:
+                    continue
+                self.add_message(Message(content=input_text, role="user"))
+                self.add_message(Message(content=answer, role="assistant"))
+                return answer
+
+            tool_calls = response.tool_calls
+            messages.append({
+                "role": "assistant",
+                "content": response.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        }
+                    }
+                    for tc in tool_calls
+                ],
+            })
+
+            for tc in tool_calls:
+                tool_name = tc.function.name
+                tool_args_raw = tc.function.arguments
+
+                try:
+                    tool_args = json.loads(tool_args_raw)
+                except (json.JSONDecodeError, TypeError):
+                    tool_args = tool_args_raw
+
+                if self.config.debug:
+                    print(f"Function Call: {tool_name}({tool_args})")
+
+                self.current_history.append(f"Action: {tool_name}({tool_args})")
+
+                try:
+                    result = self.tool_registry.execute(tool_name, tool_args)
+                except Exception as e:
+                    result = f"工具执行失败: {e}"
+
+                if self.config.debug:
+                    print(f"工具执行结果: {result}")
+
+                self.current_history.append(f"Observation: {result}")
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": str(result),
+                })
+
+        fallback_answer = "抱歉，我无法在限定步数内完成这个任务。"
+        self.add_message(Message(content=input_text, role="user"))
+        self.add_message(Message(content=fallback_answer, role="assistant"))
+        return fallback_answer
+
+    def _fallback_one_step(self, input_text: str, **kwargs) -> Optional[str]:
+        if self.config.debug:
+            print("Function calling 失败，降级回正则模式重试当前步骤")
+
+        tools_desc = self.tool_registry.get_tools_description() or "无可用工具"
+        history_str = "\n".join(self.current_history) or "（尚未执行任何操作）"
+        prompt = REACT_PROMPT.format(
+            tools=tools_desc,
+            question=input_text,
+            history=history_str,
+        )
+
+        messages = [{"role": "user", "content": prompt}]
+        response = self.llm.think(messages, **kwargs)
+
+        if not response:
+            return None
+
+        parsed = self._parse_response(response)
+        thought = parsed.get("thought", "")
+        action = parsed.get("action") or {}
+
+        if not action:
+            return None
+
+        if thought:
+            self.current_history.append(f"Thought: {thought}")
+
+        action_name = action.get("name", "")
+        action_input = action.get("input", "")
+
+        if action_name == "Finish":
+            self.add_message(Message(content=input_text, role="user"))
+            self.add_message(Message(content=action_input, role="assistant"))
+            return action_input
+
+        if not action_name:
+            return None
+
+        self.current_history.append(f"Action: {action_name}[{action_input}]")
+
+        try:
+            result = self.tool_registry.execute(action_name, action_input)
+        except Exception as e:
+            result = f"工具执行失败: {e}"
+
+        self.current_history.append(f"Observation: {result}")
+        return None
+
     def stream_run(self, input_text: str, **kwargs) -> Iterator[str]:
         self.current_history = []
         current_step = 0
@@ -196,7 +344,6 @@ class ReActAgent(Agent, RunnableMixin, StreamableMixin, ToolCallMixin):
                 yield f"[工具结果: name={action_name}, result={result}]\n"
             except Exception as e:
                 result = f"工具执行失败: {e}"
-
             self.current_history.append(f"Observation: {result}")
 
         fallback_answer = "抱歉，我无法在限定步数内完成这个任务。"
@@ -213,18 +360,16 @@ if __name__ == "__main__":
     registry = ToolRegistry()
     registry.register(DateTimeTool())
     registry.register(TavilySearchTool())
-    # config = Config(debug=True, log_level="DEBUG")
-    config = Config()
+    config = Config(debug=True, log_level="DEBUG")
+    # config = Config()
     
-    # agent = ReActAgent(name="ReActAgent", llm=llm, tool_registry=registry, config=config)
-    # question = "帮我制定一个明天北京的旅游计划？"
-    # answer = agent.run(question)
-    # print(f"最终回答: {answer}")
+    agent = ReActAgent(name="ReActAgent", llm=llm, tool_registry=registry, config=config, enable_function_calling=True)
+    question = "帮我制定一个明天北京的旅游计划？"
+    answer = agent.run(question)
+    print(f"最终回答: {answer}")
     
-    agent2 = ReActAgent(name="ReActAgentStream", llm=llm, tool_registry=registry, config=config)
-    question = "帮我制定一个明天南京的旅游计划？"
-    print("Streaming回答:")
-    for chunk in agent2.stream_run(question):
-        print(chunk, end="")
-
-    
+    # agent2 = ReActAgent(name="ReActAgentStream", llm=llm, tool_registry=registry, config=config)
+    # question = "帮我制定一个明天南京的旅游计划？"
+    # print("Streaming回答:")
+    # for chunk in agent2.stream_run(question):
+    #     print(chunk, end="")

@@ -119,7 +119,10 @@ class ToolRegistry:
         return None if self._tools is None else "\n".join(
             [tool._generate_info() for tool in self._tools.values()]
         )
-        
+
+    def get_openai_tools(self) -> list:
+        return [tool.to_openai_schema() for tool in self._tools.values()]
+
     def list_tools(self) -> list[str]:
         return list(self._tools.keys())
 
